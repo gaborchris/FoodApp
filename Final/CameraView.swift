@@ -12,11 +12,12 @@ import UIKit
 
 struct CameraView: View {
     @ObservedObject var camera: CameraViewModel
-    @ObservedObject var store: FoodStore
+    @EnvironmentObject var store: FoodStore
     
     @State var numDisplayed = 5
     @State var height: CGFloat = 300
-       
+    
+
 
     var body: some View {
         UINavigationBar.appearance().backgroundColor = .clear
@@ -26,25 +27,35 @@ struct CameraView: View {
                 CaptureImageView(camera: self.camera)
             } else {
                 VStack {
-                    self.camera.image?.resizable()
+                    Image(uiImage: self.camera.image!).resizable() //.aspectRatio(CGSize(width: 1, height: 2), contentMode: .fit)
                     Button(action: {
                         self.camera.showCapture.toggle()
-                        
                     })
                     {
                         Text("Retake Photo")
                     }.buttonStyle(GreenButton()).padding()
-      
-                    PredictionView(predictions: self.camera.predictions[0..<numDisplayed], store: self.store, height: self.height)
-                 
                     
-                        .gesture(self.collapseGesture())
-                }.padding(.top)
+                    if self.camera.predictions.isEmpty {
+                        Text("Loading...").padding()
+                    }
+                    else {
+                        PredictionView(predictions: self.camera.predictions[0..<numDisplayed], trigger: self.$triggerConfetti, height: self.height)
+                            .environmentObject(self.store)
+                        .gesture(self.collapseGesture()).transition(.offset(
+                            CGSize(width: 0, height: 1000)))
+                    }
+                }
+                .padding(.top)
+                .animation(.linear)
+                .confetti(isTriggered: self.$triggerConfetti)
             }
         }
     }
     
+    @State var triggerConfetti = false
+    
     @State private var previousDragHeight: CGFloat = 0
+    
     
     @GestureState private var gesturePanOffset: CGSize = .zero
     
@@ -54,9 +65,9 @@ struct CameraView: View {
                 withAnimation {
                     if self.previousDragHeight < finalDragGesture.translation.height {
                     self.numDisplayed = 1
-                    self.height = 50
+                    self.height = 100
                 } else {
-                    self.numDisplayed = 5
+                        self.numDisplayed = min(self.camera.predictions.count, 5)
                     self.height = 250
                 }
                 }
@@ -66,9 +77,11 @@ struct CameraView: View {
 }
 
 struct PredictionView: View {
-    
     var predictions: ArraySlice<Food>
-    @ObservedObject var store: FoodStore
+    @EnvironmentObject var store: FoodStore
+    @State private var foodToAdd: String = ""
+    @Binding var trigger: Bool
+
     var height: CGFloat
     
     var body: some View {
@@ -78,27 +91,77 @@ struct PredictionView: View {
     }
     
     func body(for size: CGSize) -> some View {
+        
         let frameHeight = min(size.height, height)
         return ZStack {
             HStack (alignment: .bottom){
-            VStack {
-                ForEach(predictions) { food in
-                    
-                    HStack {
-                        Text(food.name)
-                        Spacer()
-                        Button(action: {
-                            self.store.foods.append(food)
-                        }) {
-                            Image(systemName: "plus")
+                VStack {
+                    ForEach(self.predictions) { food in
+                        HStack {
+                            Text(food.name)
+                            Spacer()
+                            Button(action: {
+                                if !self.store.foods.contains(food) {
+                                    self.store.foods.append(food)
+                                    withAnimation(.easeOut(duration: 0.3)){
+                                        self.trigger = true
+                                    }
+                                    self.resetTrigger(afterTime: 0.3)
+                                } else {
+                                    self.store.foods.remove(at: self.store.foods.firstIndex(matching: food)!)
+                                }
+                                
+                                
+                            }) {
+                                if self.store.foods.contains(food) {
+                                    Image(systemName: "checkmark")
+                                
+                                } else {
+                                    Image(systemName: "plus")
+                                }
+                            }
                         }
                     }
+                        TextField("New Food", text: $foodToAdd, onEditingChanged: {began in
+                            if !began && self.foodToAdd != "" {
+                                self.previewNewFood = true
+                                
+                            }
+                        })
                 }
-                }}.padding().frame(height: frameHeight)
-            RoundedRectangle(cornerRadius: cornerRadius).stroke(lineWidth: self.edgeLineWidth).foregroundColor(.secondary).frame(height: frameHeight).padding(.top).padding(.bottom)
+            }
+            .padding()
+            .frame(height: frameHeight)
             
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .stroke(lineWidth: self.edgeLineWidth)
+                .foregroundColor(.secondary)
+                .frame(height: frameHeight)
+                .padding(.top)
+                .padding(.bottom)
+            
+        }.alert(isPresented: self.$previewNewFood) {
+            Alert(title: Text("Add \(self.foodToAdd)?"),
+                  message: Text("Would you like to add \(self.foodToAdd) to your log?"),
+                  primaryButton: .default(Text("Yes")) {
+                    self.store.foods.append(Food(name: self.foodToAdd, date: Date()))
+                                                 self.foodToAdd = ""
+                    },
+                  secondaryButton: .cancel()
+                  )
         }
     }
+    
+    private func resetTrigger(afterTime delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+//            withAnimation(.easeIn) {
+                self.trigger = false
+//            }
+        }
+    }
+    
+    @State private var previewNewFood = false
+    @State private var confirmNewFood = false
     
     let cornerRadius: CGFloat = 10.0
     let edgeLineWidth: CGFloat = 3
@@ -109,18 +172,13 @@ struct GreenButton: ButtonStyle {
     
     func makeBody(configuration: Self.Configuration) -> some View {
         configuration.label
-        .padding()
+            .padding()
             .foregroundColor(.primary)
             .background(Color(FoodLog.appThemeColor))
-        .cornerRadius(40)
+            .cornerRadius(40)
             .padding(5)
         
     }
 }
 
 
-//struct ContentView_Previews: PreviewProvider {
-//    static var previews: some View {
-//        ContentView()
-//    }
-//}

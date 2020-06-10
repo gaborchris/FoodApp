@@ -17,12 +17,15 @@ class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerContro
     }
     
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            guard let unwrapImage = info[UIImagePickerController.InfoKey.originalImage] as? UIImage
+        picker.dismiss(animated: true)
+        guard let unwrapImage = info[UIImagePickerController.InfoKey.originalImage] as? UIImage
             else {
                 return
             }
-        self.camera.image = Image(uiImage: unwrapImage)
+        self.camera.image = unwrapImage
         self.camera.showCapture = false
+        self.camera.predictions = []
+        self.camera.updateClassifications(for: unwrapImage)
     }
     
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
